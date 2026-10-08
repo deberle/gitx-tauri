@@ -26,8 +26,6 @@ interface BranchTreeProps {
   remoteName?: string;
 }
 
-const SELECT_DELAY_MS = 250;
-
 export function BranchTree({
   branches,
   selectedBranch,
@@ -54,40 +52,29 @@ export function BranchTree({
     isHead: boolean;
     remote: string | null;
   } | null>(null);
-  const selectTimerRef = useRef<number | null>(null);
+  const lastClickRef = useRef<{ name: string; at: number } | null>(null);
 
   useEffect(() => {
     const handleClick = () => setContextMenu(null);
     window.addEventListener("click", handleClick);
-    return () => {
-      window.removeEventListener("click", handleClick);
-      if (selectTimerRef.current !== null) {
-        window.clearTimeout(selectTimerRef.current);
-      }
-    };
+    return () => window.removeEventListener("click", handleClick);
   }, []);
 
-  const clearSelectTimer = () => {
-    if (selectTimerRef.current !== null) {
-      window.clearTimeout(selectTimerRef.current);
-      selectTimerRef.current = null;
-    }
-  };
-
-  // History selection (single-click). Delayed so double-click can checkout
-  // without the first click swapping the main view and canceling the gesture.
-  const handleSelectClick = (branchName: string) => {
-    clearSelectTimer();
-    selectTimerRef.current = window.setTimeout(() => {
-      selectTimerRef.current = null;
-      onSelectBranch(branchName);
-    }, SELECT_DELAY_MS);
-  };
-
   const handleCheckout = (branchName: string, isHead: boolean) => {
-    clearSelectTimer();
     if (!onCheckoutBranch || isHead) return;
     onCheckoutBranch(branchName);
+  };
+
+  const handleBranchClick = (branchName: string, isHead: boolean) => {
+    const now = Date.now();
+    const last = lastClickRef.current;
+    if (last && last.name === branchName && now - last.at < 400) {
+      lastClickRef.current = null;
+      handleCheckout(branchName, isHead);
+      return;
+    }
+    lastClickRef.current = { name: branchName, at: now };
+    onSelectBranch(branchName);
   };
 
   const getRemoteForBranch = (_branch: string): string | null => {
@@ -155,14 +142,10 @@ export function BranchTree({
             key={item.name}
             className={`branch-item ${isSelected ? "selected" : ""}`}
             style={{ paddingLeft: `${16 + level * 12}px` }}
-            onClick={() => handleSelectClick(item.name)}
-            onDoubleClick={(e) => {
-              e.preventDefault();
-              handleCheckout(item.name, isHead);
-            }}
+            onClick={() => handleBranchClick(item.name, isHead)}
             onContextMenu={(e) => {
               e.preventDefault();
-              clearSelectTimer();
+              e.stopPropagation();
               setContextMenu({
                 x: e.clientX,
                 y: e.clientY,

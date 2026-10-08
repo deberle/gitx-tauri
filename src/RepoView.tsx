@@ -186,8 +186,10 @@ function RepoView({ repoPath }: RepoViewProps) {
         path: repoPath,
       });
       setBranches(branchList);
+      return branchList;
     } catch (error) {
       console.error("Failed to load branches:", error);
+      return [];
     }
   }, [repoPath]);
 
@@ -283,68 +285,25 @@ function RepoView({ repoPath }: RepoViewProps) {
     }
   };
 
-  const handleCheckoutBranch = async (branchName: string) => {
-    // Strip remote prefix if present so `git checkout` can DWIM-create a
-    // local tracking branch (GitX uses the short name for local branches).
-    const localName = branchName.includes("/")
-      ? remotes.some((r) => branchName.startsWith(`${r.name}/`))
-        ? branchName.slice(branchName.indexOf("/") + 1)
-        : branchName
-      : branchName;
-
-    try {
-      await invoke("checkout_branch", {
-        path: repoPath,
-        branchName: localName,
-      });
-      await loadBranches();
-      setSelectedBranch(localName);
-      setCurrentView(null);
-      showStatus(`Checked out “${localName}”`);
-    } catch (error) {
-      await message(`Failed to checkout branch: ${error}`, {
-        title: "Checkout Error",
-        kind: "error",
-      });
-    }
-  };
-
-  const handleCheckoutCommit = async (commitId: string) => {
-    try {
-      await invoke("checkout_branch", {
-        path: repoPath,
-        branchName: commitId,
-      });
-      await loadBranches();
-      setSelectedBranch("HEAD (detached)");
-      setCurrentView(null);
-      showStatus(`Checked out ${commitId.substring(0, 7)} (detached HEAD)`);
-    } catch (error) {
-      await message(`Failed to checkout commit: ${error}`, {
-        title: "Checkout Error",
-        kind: "error",
-      });
-    }
-  };
-
-  // Checkout a branch or tag from a history badge (GitX-style).
-  const handleCheckoutRef = async (ref: string) => {
+  // One checkout path for branches, tags, and commits. A remote-tracking
+  // name is shortened so `git checkout` can create the local branch.
+  const checkoutRef = async (ref: string) => {
     const remote = remotes.find((r) => ref.startsWith(`${r.name}/`));
-    const checkoutName = remote ? ref.slice(remote.name.length + 1) : ref;
+    const name = remote ? ref.slice(remote.name.length + 1) : ref;
 
     try {
-      await invoke("checkout_branch", {
-        path: repoPath,
-        branchName: checkoutName,
-      });
-      const branchList = await invoke<GitBranch[]>("get_branches", {
-        path: repoPath,
-      });
-      setBranches(branchList);
+      await invoke("checkout_branch", { path: repoPath, branchName: name });
+      const branchList = await loadBranches();
       const head = branchList.find((b) => b.is_head);
-      setSelectedBranch(head?.name ?? checkoutName);
+      const detached = head?.name === "HEAD (detached)";
+      const label = /^[0-9a-f]{7,}$/i.test(name) ? name.slice(0, 7) : name;
+      setSelectedBranch(head?.name ?? name);
       setCurrentView(null);
-      showStatus(`Checked out “${head?.name ?? checkoutName}”`);
+      showStatus(
+        detached
+          ? `Checked out ${label} (detached HEAD)`
+          : `Checked out “${head?.name ?? label}”`
+      );
     } catch (error) {
       await message(`Failed to checkout: ${error}`, {
         title: "Checkout Error",
@@ -780,7 +739,7 @@ function RepoView({ repoPath }: RepoViewProps) {
                       setSelectedBranch(branch);
                       setCurrentView(null);
                     }}
-                    onCheckoutBranch={handleCheckoutBranch}
+                    onCheckoutBranch={checkoutRef}
                     onCreateBranch={handleCreateBranch}
                     onCreateTag={handleCreateTag}
                     onFetch={handleFetch}
@@ -831,7 +790,7 @@ function RepoView({ repoPath }: RepoViewProps) {
                               setCurrentView(null);
                             }}
                             onCheckoutBranch={(branch) =>
-                              handleCheckoutBranch(`${remote.name}/${branch}`)
+                              checkoutRef(`${remote.name}/${branch}`)
                             }
                             onDeleteBranch={handleDeleteBranch}
                             remoteName={remote.name}
@@ -1005,8 +964,7 @@ function RepoView({ repoPath }: RepoViewProps) {
                     onCreateBranch={handleCreateBranch}
                     onCreateTag={handleCreateTag}
                     onDeleteTag={handleDeleteTag}
-                    onCheckout={handleCheckoutCommit}
-                    onCheckoutRef={handleCheckoutRef}
+                    onCheckout={checkoutRef}
                     onCherryPick={handleCherryPick}
                     onApplyStash={() => handleApplyStash(0)}
                     onPopStash={() => handlePopStash(0)}
