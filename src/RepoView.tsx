@@ -309,6 +309,24 @@ function RepoView({ repoPath }: RepoViewProps) {
     }
   };
 
+  const handleCheckoutCommit = async (commitId: string) => {
+    try {
+      await invoke("checkout_branch", {
+        path: repoPath,
+        branchName: commitId,
+      });
+      await loadBranches();
+      setSelectedBranch("HEAD (detached)");
+      setCurrentView(null);
+      showStatus(`Checked out ${commitId.substring(0, 7)} (detached HEAD)`);
+    } catch (error) {
+      await message(`Failed to checkout commit: ${error}`, {
+        title: "Checkout Error",
+        kind: "error",
+      });
+    }
+  };
+
   const handleDeleteBranch = async (branch: string, remoteContext?: string) => {
     try {
       const info = await invoke<BranchDeleteInfo>("get_branch_delete_info", {
@@ -961,6 +979,7 @@ function RepoView({ repoPath }: RepoViewProps) {
                     onCreateBranch={handleCreateBranch}
                     onCreateTag={handleCreateTag}
                     onDeleteTag={handleDeleteTag}
+                    onCheckout={handleCheckoutCommit}
                     onCherryPick={handleCherryPick}
                     onApplyStash={() => handleApplyStash(0)}
                     onPopStash={() => handlePopStash(0)}

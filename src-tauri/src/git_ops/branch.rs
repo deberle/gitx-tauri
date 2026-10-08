@@ -39,6 +39,11 @@ pub fn get_branches(repo: &Repository) -> Result<Vec<GitBranch>, git2::Error> {
 }
 
 pub fn get_branch_head(repo: &Repository, branch_name: &str) -> Result<String, git2::Error> {
+    if branch_name == "HEAD" || branch_name == "HEAD (detached)" {
+        let commit = repo.head()?.peel_to_commit()?;
+        return Ok(commit.id().to_string());
+    }
+
     // Try local branch first
     if let Ok(branch) = repo.find_branch(branch_name, git2::BranchType::Local) {
         let commit = branch.get().peel_to_commit()?;

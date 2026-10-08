@@ -15,6 +15,7 @@ interface CommitHistoryProps {
   onCreateTag?: (fromCommit: string) => void;
   onDeleteTag?: (tagName: string) => void;
   onCherryPick?: (commitId: string) => void;
+  onCheckout?: (commitId: string) => void;
   onApplyStash?: () => void;
   onPopStash?: () => void;
   onDropStash?: () => void;
@@ -64,6 +65,7 @@ export function CommitHistory({
   onCreateTag,
   onDeleteTag,
   onCherryPick,
+  onCheckout,
   onApplyStash,
   onPopStash,
   onDropStash,
@@ -82,6 +84,8 @@ export function CommitHistory({
     x: number;
     y: number;
     commitId: string;
+    subject: string;
+    isHead: boolean;
     isAncestorOfHead: boolean | null;
   } | null>(null);
   const [tagBadgeContextMenu, setTagBadgeContextMenu] = useState<{
@@ -322,13 +326,25 @@ export function CommitHistory({
     onCommitSelect(commit);
   };
 
-  const handleRowContextMenu = (x: number, y: number, commitId: string) => {
-    setRowContextMenu({ x, y, commitId, isAncestorOfHead: null });
+  const handleRowContextMenu = (commit: GitCommit, x: number, y: number) => {
+    const isHead = commit.branches?.some((b) => b.is_head) ?? false;
+    const subject = commit.message.split("\n")[0] || commit.id.substring(0, 7);
+    setRowContextMenu({
+      x,
+      y,
+      commitId: commit.id,
+      subject,
+      isHead,
+      isAncestorOfHead: null,
+    });
     if (!onCherryPick) return;
-    invoke<boolean>("is_ancestor_of_head", { path: repoPath, commitId })
+    invoke<boolean>("is_ancestor_of_head", {
+      path: repoPath,
+      commitId: commit.id,
+    })
       .then((isAncestorOfHead) => {
         setRowContextMenu((prev) =>
-          prev && prev.commitId === commitId
+          prev && prev.commitId === commit.id
             ? { ...prev, isAncestorOfHead }
             : prev
         );
@@ -506,7 +522,7 @@ export function CommitHistory({
                     onClick={() => handleCommitClick(commit)}
                     onContextMenu={(e) => {
                       e.preventDefault();
-                      handleRowContextMenu(e.clientX, e.clientY, commit.id);
+                      handleRowContextMenu(commit, e.clientX, e.clientY);
                     }}
                   >
                     <td className="sha">{commit.id.substring(0, 7)}</td>
@@ -605,58 +621,78 @@ export function CommitHistory({
           </tbody>
         </table>
       </div>
-      {rowContextMenu && (onCreateBranch || onCreateTag || onCherryPick) && (
-        <div
-          className="context-menu"
-          style={{ left: rowContextMenu.x, top: rowContextMenu.y }}
-        >
-          {onCreateBranch && (
-            <div
-              className="context-menu-item"
-              onClick={() => {
-                onCreateBranch(rowContextMenu.commitId);
-                setRowContextMenu(null);
-              }}
-            >
-              Create Branch...
-            </div>
-          )}
-          {onCreateTag && (
-            <div
-              className="context-menu-item"
-              onClick={() => {
-                onCreateTag(rowContextMenu.commitId);
-                setRowContextMenu(null);
-              }}
-            >
-              Create Tag...
-            </div>
-          )}
-          {onCherryPick &&
-            (() => {
-              // Treat "still checking" the same as disabled, so the item
-              // doesn't briefly flash enabled before flipping to disabled.
-              const disabled = rowContextMenu.isAncestorOfHead !== false;
-              return (
-                <>
-                  <div className="context-menu-separator" />
-                  <div
-                    className={`context-menu-item ${disabled ? "disabled" : ""}`}
-                    onClick={() => {
-                      if (disabled) return;
-                      onCherryPick(rowContextMenu.commitId);
-                      setRowContextMenu(null);
-                    }}
-                  >
-                    {headBranchName && !disabled
-                      ? `Cherry-pick to "${headBranchName}"`
-                      : "Cherry-pick"}
-                  </div>
-                </>
-              );
-            })()}
-        </div>
-      )}
+      {rowContextMenu &&
+        (onCheckout || onCreateBranch || onCreateTag || onCherryPick) && (
+          <div
+            className="context-menu"
+            style={{ left: rowContextMenu.x, top: rowContextMenu.y }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {onCheckout && (
+              <div
+                className={`context-menu-item ${rowContextMenu.isHead ? "disabled" : ""}`}
+                onClick={() => {
+                  if (rowContextMenu.isHead) return;
+                  onCheckout(rowContextMenu.commitId);
+                  setRowContextMenu(null);
+                }}
+              >
+                {(() => {
+                  const subject =
+                    rowContextMenu.subject.length > 50
+                      ? `${rowContextMenu.subject.slice(0, 50)}…`
+                      : rowContextMenu.subject;
+                  return `Checkout Commit “${subject}”`;
+                })()}
+              </div>
+            )}
+            {onCreateBranch && (
+              <div
+                className="context-menu-item"
+                onClick={() => {
+                  onCreateBranch(rowContextMenu.commitId);
+                  setRowContextMenu(null);
+                }}
+              >
+                Create Branch...
+              </div>
+            )}
+            {onCreateTag && (
+              <div
+                className="context-menu-item"
+                onClick={() => {
+                  onCreateTag(rowContextMenu.commitId);
+                  setRowContextMenu(null);
+                }}
+              >
+                Create Tag...
+              </div>
+            )}
+            {onCherryPick &&
+              (() => {
+                // Treat "still checking" the same as disabled, so the item
+                // doesn't briefly flash enabled before flipping to disabled.
+                const disabled = rowContextMenu.isAncestorOfHead !== false;
+                return (
+                  <>
+                    <div className="context-menu-separator" />
+                    <div
+                      className={`context-menu-item ${disabled ? "disabled" : ""}`}
+                      onClick={() => {
+                        if (disabled) return;
+                        onCherryPick(rowContextMenu.commitId);
+                        setRowContextMenu(null);
+                      }}
+                    >
+                      {headBranchName && !disabled
+                        ? `Cherry-pick to "${headBranchName}"`
+                        : "Cherry-pick"}
+                    </div>
+                  </>
+                );
+              })()}
+          </div>
+        )}
       {tagBadgeContextMenu && onDeleteTag && (
         <div
           className="context-menu"

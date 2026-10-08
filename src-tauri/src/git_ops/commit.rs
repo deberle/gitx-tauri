@@ -112,8 +112,10 @@ pub fn get_commits(
 
     // If specific branch requested, only walk from that branch
     if let Some(branch) = branch_name {
-        // Try local branch first
-        if let Ok(b) = repo.find_branch(branch, git2::BranchType::Local) {
+        if branch == "HEAD" || branch == "HEAD (detached)" {
+            revwalk.push_head()?;
+        } else if let Ok(b) = repo.find_branch(branch, git2::BranchType::Local) {
+            // Try local branch first
             if let Some(target) = b.get().target() {
                 revwalk.push(target)?;
             }
@@ -177,6 +179,21 @@ pub fn get_commits(
                     is_head: !is_detached && Some(name.to_string()) == head_name,
                     is_remote: branch_type == git2::BranchType::Remote,
                 });
+            }
+        }
+    }
+
+    if is_detached {
+        if let Ok(head) = repo.head() {
+            if let Ok(commit) = head.peel_to_commit() {
+                branch_map
+                    .entry(commit.id())
+                    .or_default()
+                    .push(GitBranch {
+                        name: "HEAD (detached)".to_string(),
+                        is_head: true,
+                        is_remote: false,
+                    });
             }
         }
     }
