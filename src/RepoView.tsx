@@ -327,6 +327,32 @@ function RepoView({ repoPath }: RepoViewProps) {
     }
   };
 
+  // Checkout a branch or tag from a history badge (GitX-style).
+  const handleCheckoutRef = async (ref: string) => {
+    const remote = remotes.find((r) => ref.startsWith(`${r.name}/`));
+    const checkoutName = remote ? ref.slice(remote.name.length + 1) : ref;
+
+    try {
+      await invoke("checkout_branch", {
+        path: repoPath,
+        branchName: checkoutName,
+      });
+      const branchList = await invoke<GitBranch[]>("get_branches", {
+        path: repoPath,
+      });
+      setBranches(branchList);
+      const head = branchList.find((b) => b.is_head);
+      setSelectedBranch(head?.name ?? checkoutName);
+      setCurrentView(null);
+      showStatus(`Checked out “${head?.name ?? checkoutName}”`);
+    } catch (error) {
+      await message(`Failed to checkout: ${error}`, {
+        title: "Checkout Error",
+        kind: "error",
+      });
+    }
+  };
+
   const handleDeleteBranch = async (branch: string, remoteContext?: string) => {
     try {
       const info = await invoke<BranchDeleteInfo>("get_branch_delete_info", {
@@ -980,6 +1006,7 @@ function RepoView({ repoPath }: RepoViewProps) {
                     onCreateTag={handleCreateTag}
                     onDeleteTag={handleDeleteTag}
                     onCheckout={handleCheckoutCommit}
+                    onCheckoutRef={handleCheckoutRef}
                     onCherryPick={handleCherryPick}
                     onApplyStash={() => handleApplyStash(0)}
                     onPopStash={() => handlePopStash(0)}

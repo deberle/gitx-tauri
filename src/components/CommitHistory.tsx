@@ -16,6 +16,7 @@ interface CommitHistoryProps {
   onDeleteTag?: (tagName: string) => void;
   onCherryPick?: (commitId: string) => void;
   onCheckout?: (commitId: string) => void;
+  onCheckoutRef?: (ref: string) => void;
   onApplyStash?: () => void;
   onPopStash?: () => void;
   onDropStash?: () => void;
@@ -66,6 +67,7 @@ export function CommitHistory({
   onDeleteTag,
   onCherryPick,
   onCheckout,
+  onCheckoutRef,
   onApplyStash,
   onPopStash,
   onDropStash,
@@ -93,6 +95,13 @@ export function CommitHistory({
     y: number;
     tag: string;
   } | null>(null);
+  const [branchBadgeContextMenu, setBranchBadgeContextMenu] = useState<{
+    x: number;
+    y: number;
+    branch: string;
+    isHead: boolean;
+    isRemote: boolean;
+  } | null>(null);
   const [stashBadgeContextMenu, setStashBadgeContextMenu] = useState<{
     x: number;
     y: number;
@@ -108,6 +117,7 @@ export function CommitHistory({
     const handleClick = () => {
       setRowContextMenu(null);
       setTagBadgeContextMenu(null);
+      setBranchBadgeContextMenu(null);
       setStashBadgeContextMenu(null);
     };
     window.addEventListener("click", handleClick);
@@ -581,7 +591,25 @@ export function CommitHistory({
                               ? "branch-badge-remote"
                               : "branch-badge-local";
                           return (
-                            <span key={branch.name} className={className}>
+                            <span
+                              key={branch.name}
+                              className={className}
+                              onContextMenu={
+                                onCheckoutRef
+                                  ? (e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      setBranchBadgeContextMenu({
+                                        x: e.clientX,
+                                        y: e.clientY,
+                                        branch: branch.name,
+                                        isHead: branch.is_head,
+                                        isRemote: branch.is_remote,
+                                      });
+                                    }
+                                  : undefined
+                              }
+                            >
                               {branch.name}
                             </span>
                           );
@@ -592,7 +620,7 @@ export function CommitHistory({
                             key={tag}
                             className="tag-badge"
                             onContextMenu={
-                              onDeleteTag
+                              onCheckoutRef || onDeleteTag
                                 ? (e) => {
                                     e.preventDefault();
                                     e.stopPropagation();
@@ -693,20 +721,58 @@ export function CommitHistory({
               })()}
           </div>
         )}
-      {tagBadgeContextMenu && onDeleteTag && (
+      {branchBadgeContextMenu && onCheckoutRef && (
+        <div
+          className="context-menu"
+          style={{
+            left: branchBadgeContextMenu.x,
+            top: branchBadgeContextMenu.y,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div
+            className={`context-menu-item ${branchBadgeContextMenu.isHead ? "disabled" : ""}`}
+            onClick={() => {
+              if (branchBadgeContextMenu.isHead) return;
+              onCheckoutRef(branchBadgeContextMenu.branch);
+              setBranchBadgeContextMenu(null);
+            }}
+          >
+            Checkout “{branchBadgeContextMenu.branch}”
+          </div>
+        </div>
+      )}
+      {tagBadgeContextMenu && (onCheckoutRef || onDeleteTag) && (
         <div
           className="context-menu"
           style={{ left: tagBadgeContextMenu.x, top: tagBadgeContextMenu.y }}
+          onClick={(e) => e.stopPropagation()}
         >
-          <div
-            className="context-menu-item"
-            onClick={() => {
-              onDeleteTag(tagBadgeContextMenu.tag);
-              setTagBadgeContextMenu(null);
-            }}
-          >
-            Delete Tag...
-          </div>
+          {onCheckoutRef && (
+            <div
+              className="context-menu-item"
+              onClick={() => {
+                onCheckoutRef(tagBadgeContextMenu.tag);
+                setTagBadgeContextMenu(null);
+              }}
+            >
+              Checkout “{tagBadgeContextMenu.tag}”
+            </div>
+          )}
+          {onCheckoutRef && onDeleteTag && (
+            <div className="context-menu-separator" />
+          )}
+          {onDeleteTag && (
+            <div
+              className="context-menu-item"
+              onClick={() => {
+                onDeleteTag(tagBadgeContextMenu.tag);
+                setTagBadgeContextMenu(null);
+              }}
+            >
+              Delete Tag...
+            </div>
+          )}
         </div>
       )}
       {stashBadgeContextMenu && (onApplyStash || onPopStash || onDropStash) && (
