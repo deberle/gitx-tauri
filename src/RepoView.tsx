@@ -284,9 +284,23 @@ function RepoView({ repoPath }: RepoViewProps) {
   };
 
   const handleCheckoutBranch = async (branchName: string) => {
+    // Strip remote prefix if present so `git checkout` can DWIM-create a
+    // local tracking branch (GitX uses the short name for local branches).
+    const localName = branchName.includes("/")
+      ? remotes.some((r) => branchName.startsWith(`${r.name}/`))
+        ? branchName.slice(branchName.indexOf("/") + 1)
+        : branchName
+      : branchName;
+
     try {
-      await invoke("checkout_branch", { path: repoPath, branchName });
+      await invoke("checkout_branch", {
+        path: repoPath,
+        branchName: localName,
+      });
       await loadBranches();
+      setSelectedBranch(localName);
+      setCurrentView(null);
+      showStatus(`Checked out “${localName}”`);
     } catch (error) {
       await message(`Failed to checkout branch: ${error}`, {
         title: "Checkout Error",
@@ -772,6 +786,9 @@ function RepoView({ repoPath }: RepoViewProps) {
                               setSelectedBranch(`${remote.name}/${branch}`);
                               setCurrentView(null);
                             }}
+                            onCheckoutBranch={(branch) =>
+                              handleCheckoutBranch(`${remote.name}/${branch}`)
+                            }
                             onDeleteBranch={handleDeleteBranch}
                             remoteName={remote.name}
                             level={1}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 interface GitBranch {
   name: string;
@@ -26,6 +26,8 @@ interface BranchTreeProps {
   remoteName?: string;
 }
 
+const SELECT_DELAY_MS = 250;
+
 export function BranchTree({
   branches,
   selectedBranch,
@@ -52,19 +54,56 @@ export function BranchTree({
     isHead: boolean;
     remote: string | null;
   } | null>(null);
+  const selectTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     const handleClick = () => setContextMenu(null);
     window.addEventListener("click", handleClick);
-    return () => window.removeEventListener("click", handleClick);
+    return () => {
+      window.removeEventListener("click", handleClick);
+      if (selectTimerRef.current !== null) {
+        window.clearTimeout(selectTimerRef.current);
+      }
+    };
   }, []);
 
+  const clearSelectTimer = () => {
+    if (selectTimerRef.current !== null) {
+      window.clearTimeout(selectTimerRef.current);
+      selectTimerRef.current = null;
+    }
+  };
+
+  // History selection (single-click). Delayed so double-click can checkout
+  // without the first click swapping the main view and canceling the gesture.
+  const handleSelectClick = (branchName: string) => {
+    clearSelectTimer();
+    selectTimerRef.current = window.setTimeout(() => {
+      selectTimerRef.current = null;
+      onSelectBranch(branchName);
+    }, SELECT_DELAY_MS);
+  };
+
+  const handleCheckout = (branchName: string, isHead: boolean) => {
+    clearSelectTimer();
+    if (!onCheckoutBranch || isHead) return;
+    onCheckoutBranch(branchName);
+  };
+
   const getRemoteForBranch = (_branch: string): string | null => {
-    // Default to 'origin' if it exists, otherwise first remote
-    // TODO: Implement branch-specific remote lookup
+    if (remoteName) return remoteName;
     if (remotes.length === 0) return null;
     const hasOrigin = remotes.some((r) => r.name === "origin");
     return hasOrigin ? "origin" : remotes[0].name;
+  };
+
+  const isBranchSelected = (branchName: string) => {
+    if (!selectedBranch) return false;
+    if (selectedBranch === branchName) return true;
+    if (remoteName && selectedBranch === `${remoteName}/${branchName}`) {
+      return true;
+    }
+    return false;
   };
 
   const buildBranchTree = (branches: GitBranch[]): BranchTree => {
@@ -75,9 +114,9 @@ export function BranchTree({
         if (!tree._branches) tree._branches = [];
         (tree._branches as string[]).push(branch.name);
       } else {
-        const [prefix, ...rest] = parts;
-        if (!tree[prefix]) tree[prefix] = {};
-        let current: Record<string, unknown> = tree[prefix] as Record<
+        const [folder, ...rest] = parts;
+        if (!tree[folder]) tree[folder] = {};
+        let current: Record<string, unknown> = tree[folder] as Record<
           string,
           unknown
         >;
@@ -97,7 +136,6 @@ export function BranchTree({
     const rootBranches = tree._branches as string[] | undefined;
     const folders = Object.keys(tree).filter((k) => k !== "_branches");
 
-    // Combine branches and folders for sorting
     const items: Array<{ type: "branch" | "folder"; name: string }> = [];
 
     if (rootBranches) {
@@ -105,32 +143,31 @@ export function BranchTree({
     }
     folders.forEach((name) => items.push({ type: "folder", name }));
 
-    // Sort all items together
     items.sort((a, b) => a.name.localeCompare(b.name));
 
-    // Render sorted items
     items.forEach((item) => {
       if (item.type === "branch") {
         const branch = branches.find((b) => b.name === item.name);
-        const isSelected = selectedBranch === item.name;
+        const isHead = branch?.is_head || false;
+        const isSelected = isBranchSelected(item.name);
         elements.push(
           <div
             key={item.name}
             className={`branch-item ${isSelected ? "selected" : ""}`}
             style={{ paddingLeft: `${16 + level * 12}px` }}
-            onClick={() => onSelectBranch(item.name)}
-            onDoubleClick={() => {
-              if (onCheckoutBranch && !branch?.is_head) {
-                onCheckoutBranch(item.name);
-              }
+            onClick={() => handleSelectClick(item.name)}
+            onDoubleClick={(e) => {
+              e.preventDefault();
+              handleCheckout(item.name, isHead);
             }}
             onContextMenu={(e) => {
               e.preventDefault();
+              clearSelectTimer();
               setContextMenu({
                 x: e.clientX,
                 y: e.clientY,
                 branch: item.name,
-                isHead: branch?.is_head || false,
+                isHead,
                 remote: getRemoteForBranch(item.name),
               });
             }}
@@ -140,7 +177,7 @@ export function BranchTree({
             </span>
             <span className="item-icon">⎇</span>
             {item.name.split("/").pop()}
-            {branch?.is_head && <span className="current-branch">✓</span>}
+            {isHead && <span className="current-branch">✓</span>}
           </div>
         );
       } else {
@@ -182,18 +219,19 @@ export function BranchTree({
         <div
           className="context-menu"
           style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(e) => e.stopPropagation()}
         >
           {onCheckoutBranch && (
             <div
               className={`context-menu-item ${contextMenu.isHead ? "disabled" : ""}`}
               onClick={() => {
                 if (!contextMenu.isHead) {
-                  onCheckoutBranch(contextMenu.branch);
+                  handleCheckout(contextMenu.branch, contextMenu.isHead);
                   setContextMenu(null);
                 }
               }}
             >
-              Checkout
+              Checkout “{contextMenu.branch.split("/").pop()}”
             </div>
           )}
           {onDeleteBranch && (
